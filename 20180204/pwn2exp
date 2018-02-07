@@ -1,5 +1,6 @@
 #!/usr/bin/python 
 # coding:utf-8
+# 参考 https://paper.seebug.org/450/
 from pwn import *
 
 context(terminal = ['gnome-terminal', '-x', 'sh', '-c'], arch = 'i386', os = 'linux', log_level = 'debug')
