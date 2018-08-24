@@ -1,4 +1,4 @@
-##CODE BLUE CTF 2017 / Vertical Takeoff Vertical landing
+## CODE BLUE CTF 2017 / Vertical Takeoff Vertical landing
 
 今天集训的第二次比赛出题aFang找的题目，第一次接触到这个难度级别，学到了很多，感觉很爽~
 
